@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect Hub - Multi-Chat WhatsApp Style</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col font-sans overflow-hidden">
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 p-8 rounded-2xl border border-gray-700 max-w-sm w-full text-center space-y-6 shadow-2xl">
+      <div class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold">
+        <i class="fas fa-comments"></i>
+      </div>
+      <div>
+        <h2 class="text-2xl font-bold">YP Web Chat</h2>
+        <p class="text-gray-400 text-sm mt-1">Multi-User Video Call & Chat</p>
+      </div>
+      <button onclick="signInWithGoogle()" class="w-full bg-white text-gray-900 hover:bg-gray-100 font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition shadow-lg">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5" alt="Google">
+        Continue with Google
+      </button>
+    </div>
+  </div>
+
+  <!-- Incoming Call Ring Modal -->
+  <div id="incoming-call-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-gray-800 border border-gray-700 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl space-y-6">
+      <div class="relative w-24 h-24 mx-auto">
+        <div class="absolute inset-0 rounded-full bg-indigo-500/30 animate-ping"></div>
+        <div class="w-24 h-24 bg-indigo-600 rounded-full flex items-center justify-center text-3xl font-bold border-4 border-gray-800 relative z-10">
+          <i class="fas fa-phone-alt animate-pulse"></i>
+        </div>
+      </div>
+      <div>
+        <h3 id="caller-name" class="text-xl font-bold">Incoming Call...</h3>
+        <p id="caller-email" class="text-xs text-gray-400 mt-1">Friend Calling</p>
+      </div>
+      <div class="flex justify-center gap-4">
+        <button onclick="declineIncomingCall()" class="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition">
+          <i class="fas fa-phone-slash"></i> Decline
+        </button>
+        <button onclick="acceptIncomingCall()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition">
+          <i class="fas fa-phone"></i> Accept
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Chat Modal -->
+  <div id="new-chat-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 border border-gray-700 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl">
+      <h3 class="text-lg font-bold">Start New Chat</h3>
+      <input type="email" id="new-friend-email" placeholder="Enter Friend's Gmail ID..." class="w-full bg-gray-700 px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <div class="flex justify-end gap-2">
+        <button onclick="closeNewChatModal()" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+        <button onclick="addNewContact()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-semibold">Add Chat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App Layout -->
+  <div id="app" class="h-screen flex hidden">
+    
+    <!-- Sidebar (Contacts List) -->
+    <aside class="w-full md:w-80 bg-gray-800 border-r border-gray-700 flex flex-col h-full">
+      <!-- User Profile Header -->
+      <div class="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <img id="user-avatar" class="w-10 h-10 rounded-full border border-indigo-500" src="" alt="User">
+          <div class="overflow-hidden">
+            <h1 id="user-name" class="font-bold text-sm truncate">User Name</h1>
+            <p id="my-email" class="text-xs text-indigo-400 font-mono truncate">Loading...</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="openNewChatModal()" class="p-2 text-gray-300 hover:text-white rounded-lg transition" title="New Chat">
+            <i class="fas fa-plus text-lg"></i>
+          </button>
+          <button onclick="logout()" class="p-2 text-gray-300 hover:text-red-500 rounded-lg transition" title="Logout">
+            <i class="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chats Section Header -->
+      <div class="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider bg-gray-800/60 border-b border-gray-700/50">
+        Conversations
+      </div>
+
+      <!-- Contacts List -->
+      <div id="contacts-list" class="flex-1 overflow-y-auto divide-y divide-gray-700/40">
+        <!-- Dynamic Chats Will Render Here -->
+      </div>
+    </aside>
+
+    <!-- Main Chat Window -->
+    <main class="flex-1 flex flex-col h-full bg-gray-900 relative">
+      
+      <!-- Empty State View -->
+      <div id="no-active-chat" class="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500">
+        <i class="fas fa-comments text-6xl mb-4 text-gray-700"></i>
+        <h2 class="text-xl font-semibold text-gray-400">Select a chat to start messaging</h2>
+        <p class="text-sm mt-1">Ya plus (+) icon par click karke Gmail ID se new friend add karein.</p>
+      </div>
+
+      <!-- Active Chat Container -->
+      <div id="active-chat-container" class="hidden flex-1 flex flex-col h-full">
+        <!-- Top Chat Header -->
+        <header class="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+          <div>
+            <h2 id="active-contact-email" class="font-bold text-sm md:text-base font-mono">friend@gmail.com</h2>
+            <p class="text-xs text-emerald-400">P2P Connected</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="startCall(false)" class="p-3 bg-emerald-600 hover:bg-emerald-500 rounded-full text-white transition" title="Voice Call">
+              <i class="fas fa-phone"></i>
+            </button>
+            <button onclick="startCall(true)" class="p-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white transition" title="Video Call">
+              <i class="fas fa-video"></i>
+            </button>
+          </div>
+        </header>
+
+        <!-- Messages Area -->
+        <div id="messages" class="flex-1 p-4 overflow-y-auto space-y-3">
+          <!-- Active Messages Render Here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-gray-800 border-t border-gray-700 flex items-center gap-2">
+          <input type="file" id="file-input" class="hidden" onchange="sendFile(this.files[0])">
+          <button onclick="document.getElementById('file-input').click()" class="p-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300 hover:text-white transition" title="Send Photo/File">
+            <i class="fas fa-paperclip"></i>
+          </button>
+          
+          <input type="text" id="message-input" placeholder="Type a message..." class="flex-1 bg-gray-700 px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" onkeypress="if(event.key==='Enter') sendMessage()">
+          <button onclick="sendMessage()" class="bg-indigo-600 px-5 py-2 rounded-lg font-semibold hover:bg-indigo-500"><i class="fas fa-paper-plane"></i></button>
+        </div>
+      </div>
+
+      <!-- Video Call Screen Overlay -->
+      <div id="video-container" class="hidden absolute inset-0 bg-black/95 z-40 flex-col items-center justify-center p-4">
+        <div class="relative w-full max-w-4xl h-full max-h-[80vh] flex items-center justify-center">
+          <video id="remote-video" autoplay playsinline class="w-full h-full object-cover rounded-xl border border-gray-700"></video>
+          <video id="local-video" autoplay playsinline muted class="absolute bottom-4 right-4 w-32 h-44 object-cover rounded-lg border-2 border-indigo-500 shadow-lg"></video>
+        </div>
+        <div class="mt-4 flex gap-4">
+          <button onclick="endCall()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-full font-semibold flex items-center gap-2">
+            <i class="fas fa-phone-slash"></i> End Call
+          </button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAICHGRRB8hZXheIrGP5zIbz4NA0GxvAgQ",
+      authDomain: "yp-pvt.firebaseapp.com",
+      projectId: "yp-pvt",
+      storageBucket: "yp-pvt.firebasestorage.app",
+      messagingSenderId: "456857090064",
+      appId: "1:456857090064:web:46ae551ef48bf4266ef295",
+      measurementId: "G-FCW233NDD0"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const provider = new firebase.auth.GoogleAuthProvider();
+
+    let peer = null;
+    let connections = {}; // Active Peer Connections mapped by Email
+    let chatStore = {};   // Message histories mapped by Email
+    let activeChatEmail = null;
+    let currentCall = null;
+    let incomingCallObj = null;
+    let localStream = null;
+    let audioCtx = null;
+    let ringInterval = null;
+
+    function emailToPeerId(email) {
+      return email.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
+    }
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('user-avatar').src = user.photoURL || 'https://via.placeholder.com/40';
+        document.getElementById('user-name').innerText = user.displayName;
+        document.getElementById('my-email').innerText = user.email;
+        
+        initPeer(user.email);
+      } else {
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('app').classList.add('hidden');
+      }
+    });
+
+    function signInWithGoogle() {
+      auth.signInWithPopup(provider).catch(err => alert("Login Failed: " + err.message));
+    }
+
+    function logout() {
+      auth.signOut();
+      if (peer) peer.destroy();
+    }
+
+    // Audio Ringtone Generator
+    function startRingtone() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        ringInterval = setInterval(() => {
+          if (!audioCtx) return;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.8);
+        }, 1200);
+      } catch (e) { console.log(e); }
+    }
+
+    function stopRingtone() {
+      if (ringInterval) clearInterval(ringInterval);
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+      }
+    }
+
+    function initPeer(email) {
+      const myPeerId = emailToPeerId(email);
+      peer = new Peer(myPeerId);
+
+      peer.on('connection', (conn) => {
+        const callerPeerId = conn.peer;
+        // Search email key by peer string
+        let senderEmail = Object.keys(chatStore).find(e => emailToPeerId(e) === callerPeerId) || callerPeerId;
+
+        connections[senderEmail] = conn;
+        setupDataListener(conn, senderEmail);
+        ensureContactExists(senderEmail);
+      });
+
+      peer.on('call', (call) => {
+        incomingCallObj = call;
+        const callerPeerId = call.peer;
+        let callerEmail = Object.keys(chatStore).find(e => emailToPeerId(e) === callerPeerId) || callerPeerId;
+        
+        document.getElementById('caller-email').innerText = callerEmail;
+        startRingtone();
+        document.getElementById('incoming-call-modal').classList.remove('hidden');
+      });
+    }
+
+    function ensureContactExists(email) {
+      if (!chatStore[email]) {
+        chatStore[email] = [];
+        renderContactsList();
+      }
+    }
+
+    function openNewChatModal() { document.getElementById('new-chat-modal').classList.remove('hidden'); }
+    function closeNewChatModal() { document.getElementById('new-chat-modal').classList.add('hidden'); }
+
+    function addNewContact() {
+      const emailInput = document.getElementById('new-friend-email');
+      const email = emailInput.value.trim().toLowerCase();
+      if (!email) return;
+
+      ensureContactExists(email);
+      emailInput.value = '';
+      closeNewChatModal();
+      selectChat(email);
+    }
+
+    function renderContactsList() {
+      const listEl = document.getElementById('contacts-list');
+      listEl.innerHTML = '';
+
+      Object.keys(chatStore).forEach(email => {
+        const item = document.createElement('div');
+        const isActive = activeChatEmail === email;
+        item.className = `p-4 cursor-pointer hover:bg-gray-700/50 flex items-center justify-between transition ${isActive ? 'bg-gray-700 border-l-4 border-indigo-500' : ''}`;
+        item.onclick = () => selectChat(email);
+        
+        item.innerHTML = `
+          <div class="flex items-center gap-3 overflow-hidden">
+            <div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-sm">
+              ${email.charAt(0).toUpperCase()}
+            </div>
+            <div class="overflow-hidden">
+              <p class="font-semibold text-sm truncate text-white font-mono">${email}</p>
+              <p class="text-xs text-gray-400 truncate">${chatStore[email].length ? 'Click to view chat' : 'No messages yet'}</p>
+            </div>
+          </div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    function selectChat(email) {
+      activeChatEmail = email;
+      document.getElementById('no-active-chat').classList.add('hidden');
+      document.getElementById('active-chat-container').classList.remove('hidden');
+      document.getElementById('active-contact-email').innerText = email;
+      
+      renderContactsList();
+      renderMessages();
+
+      // Ensure Peer Connection
+      if (!connections[email] || !connections[email].open) {
+        const targetPeerId = emailToPeerId(email);
+        const conn = peer.connect(targetPeerId);
+        connections[email] = conn;
+
+        conn.on('open', () => setupDataListener(conn, email));
+      }
+    }
+
+    function setupDataListener(conn, email) {
+      conn.on('data', (data) => {
+        ensureContactExists(email);
+        chatStore[email].push({ type: 'received', data: data });
+
+        if (activeChatEmail === email) {
+          renderMessages();
+        } else {
+          renderContactsList();
+        }
+      });
+    }
+
+    function sendMessage() {
+      if (!activeChatEmail) return;
+      const msgInput = document.getElementById('message-input');
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      const conn = connections[activeChatEmail];
+      if (conn && conn.open) {
+        conn.send(text);
+        chatStore[activeChatEmail].push({ type: 'sent', data: text });
+        renderMessages();
+        msgInput.value = '';
+      } else {
+        alert("Friend currently offline hai!");
+      }
+    }
+
+    function sendFile(file) {
+      if (!file || !activeChatEmail) return;
+      const conn = connections[activeChatEmail];
+
+      if (conn && conn.open) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const payload = {
+            name: file.name,
+            fileType: file.type,
+            data: e.target.result
+          };
+          conn.send(payload);
+          chatStore[activeChatEmail].push({ type: 'sent', data: payload });
+          renderMessages();
+          document.getElementById('file-input').value = '';
+        };
+        reader.readAsDataURL(file);
+      } else {
+        alert("Friend currently offline hai!");
+      }
+    }
+
+    function renderMessages() {
+      const messagesEl = document.getElementById('messages');
+      messagesEl.innerHTML = '';
+      const list = chatStore[activeChatEmail] || [];
+
+      list.forEach(msg => {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = msg.type === 'sent' ? 'flex justify-end' : 'flex justify-start';
+
+        if (typeof msg.data === 'object' && msg.data.fileType) {
+          let contentHtml = '';
+          if (msg.data.fileType.startsWith('image/')) {
+            contentHtml = `<div class="p-2 bg-gray-800 border border-gray-700 rounded-xl max-w-xs">
+              <img src="${msg.data.data}" class="rounded-lg w-full max-h-60 object-cover mb-1">
+              <p class="text-xs text-gray-400 text-right">${msg.data.name}</p>
+            </div>`;
+          } else {
+            contentHtml = `<div class="p-3 bg-gray-800 border border-gray-700 rounded-xl max-w-xs flex items-center gap-3">
+              <i class="fas fa-file-alt text-2xl text-indigo-400"></i>
+              <div class="overflow-hidden">
+                <p class="text-xs font-semibold truncate text-white">${msg.data.name}</p>
+                <a href="${msg.data.data}" download="${msg.data.name}" class="text-xs text-indigo-400 hover:underline">Download</a>
+              </div>
+            </div>`;
+          }
+          msgDiv.innerHTML = contentHtml;
+        } else {
+          msgDiv.innerHTML = `<div class="${msg.type === 'sent' ? 'bg-indigo-600' : 'bg-gray-700'} text-white px-4 py-2 rounded-xl max-w-xs text-sm">${msg.data}</div>`;
+        }
+
+        messagesEl.appendChild(msgDiv);
+      });
+
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // Call Handlers
+    async function acceptIncomingCall() {
+      stopRingtone();
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+
+      const isVideo = confirm("Click OK for Video Call, Cancel for Voice Call");
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        incomingCallObj.answer(localStream);
+        currentCall = incomingCallObj;
+        setupCallStream(currentCall, isVideo);
+      } catch (err) {
+        alert("Camera/Mic access denied!");
+      }
+    }
+
+    function declineIncomingCall() {
+      stopRingtone();
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+      if (incomingCallObj) incomingCallObj.close();
+    }
+
+    async function startCall(videoEnabled) {
+      if (!activeChatEmail) return alert("Select a chat first!");
+      const targetPeerId = emailToPeerId(activeChatEmail);
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: videoEnabled, audio: true });
+        const call = peer.call(targetPeerId, localStream);
+        currentCall = call;
+        setupCallStream(call, videoEnabled);
+      } catch (err) {
+        alert("Camera/Mic access denied!");
+      }
+    }
+
+    function setupCallStream(call, showVideo) {
+      const videoContainer = document.getElementById('video-container');
+      if (showVideo) videoContainer.classList.remove('hidden');
+      videoContainer.classList.add('flex');
+
+      document.getElementById('local-video').srcObject = localStream;
+
+      call.on('stream', (remoteStream) => {
+        document.getElementById('remote-video').srcObject = remoteStream;
+      });
+
+      call.on('close', () => endCall());
+    }
+
+    function endCall() {
+      stopRingtone();
+      const videoContainer = document.getElementById('video-container');
+      if (currentCall) currentCall.close();
+      if (localStream) localStream.getTracks().forEach(track => track.stop());
+
+      videoContainer.classList.add('hidden');
+      videoContainer.classList.remove('flex');
+      document.getElementById('remote-video').srcObject = null;
+      document.getElementById('local-video').srcObject = null;
+    }
+  </script>
+</body>
+</html>
