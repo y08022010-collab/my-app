@@ -161,15 +161,28 @@
 
   <script>
     // Firebase Configuration - Apne Web App Credentials replace karein
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
+   
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAICHGRRB8hZXheIrGP5zIbz4NA0GxvAgQ",
+  authDomain: "yp-pvt.firebaseapp.com",
+  projectId: "yp-pvt",
+  storageBucket: "yp-pvt.firebasestorage.app",
+  messagingSenderId: "456857090064",
+  appId: "1:456857090064:web:46ae551ef48bf4266ef295",
+  measurementId: "G-FCW233NDD0"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
