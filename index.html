@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Style Chat & Call App</title>
+  
+  <!-- Tailwind CSS & FontAwesome Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- PeerJS (Live Video/Voice Calls) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- 1. Authentication Overlay -->
+  <div id="auth-screen" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 p-8 rounded-2xl border border-gray-700 w-full max-w-md shadow-2xl">
+      <h2 class="text-2xl font-bold mb-6 text-center text-indigo-400">ChatApp Login</h2>
+      <div class="space-y-4">
+        <input type="email" id="auth-email" placeholder="Email Address" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500 text-sm">
+        <input type="password" id="auth-password" placeholder="Password" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500 text-sm">
+        <div class="flex gap-3 pt-2">
+          <button onclick="handleLogin()" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold transition">Login</button>
+          <button onclick="handleSignUp()" class="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition border border-gray-600">Sign Up</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Main App Interface -->
+  <div id="app" class="flex-1 flex h-full hidden overflow-hidden">
+    
+    <!-- Sidebar (Contacts Saved Permanently) -->
+    <aside class="w-full md:w-80 bg-gray-800 border-r border-gray-700 flex flex-col h-full">
+      <div class="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
+        <div>
+          <h1 class="font-bold text-base text-indigo-400">WhatsApp Web</h1>
+          <p id="user-display-email" class="text-xs text-gray-400 truncate max-w-[150px] font-mono"></p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="addNewContact()" class="p-2 bg-indigo-600 hover:bg-indigo-500 text-xs rounded-lg flex items-center gap-1 font-semibold transition">
+            <i class="fas fa-plus"></i> New Chat
+          </button>
+          <button onclick="handleLogout()" class="p-2 bg-red-600/20 text-red-400 hover:bg-red-600/30 text-xs rounded-lg transition">
+            <i class="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Contacts List -->
+      <div id="contacts-list" class="flex-1 overflow-y-auto divide-y divide-gray-700/40">
+        <!-- Dynmically loaded from Firestore -->
+      </div>
+    </aside>
+
+    <!-- Main Chat Window -->
+    <main class="hidden md:flex flex-1 flex-col h-full bg-gray-900 relative">
+      
+      <!-- No Chat Selected State -->
+      <div id="no-active-chat" class="flex-1 flex flex-col items-center justify-center text-gray-500">
+        <i class="fas fa-comments text-6xl mb-4 text-gray-700"></i>
+        <p class="text-lg">Select a contact or add new friend to chat</p>
+      </div>
+
+      <!-- Active Chat Interface -->
+      <div id="active-chat-container" class="flex-1 flex flex-col h-full hidden">
+        
+        <!-- Header -->
+        <header class="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold">
+              <i class="fas fa-user"></i>
+            </div>
+            <div>
+              <p id="active-contact-email" class="font-bold text-sm font-mono"></p>
+              <span class="text-xs text-green-400 flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-green-400 inline-block animate-pulse"></span> Cloud Sync Active
+              </span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="initiateCall('audio')" class="p-2.5 bg-gray-700 hover:bg-gray-600 text-indigo-400 rounded-lg transition" title="Voice Call">
+              <i class="fas fa-phone"></i>
+            </button>
+            <button onclick="initiateCall('video')" class="p-2.5 bg-gray-700 hover:bg-gray-600 text-indigo-400 rounded-lg transition" title="Video Call">
+              <i class="fas fa-video"></i>
+            </button>
+          </div>
+        </header>
+
+        <!-- Messages Section -->
+        <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3">
+          <!-- Messages will stream here dynamically -->
+        </div>
+
+        <!-- Input Bar -->
+        <footer class="p-3 bg-gray-800 border-t border-gray-700 flex items-center gap-2">
+          <label class="p-2.5 text-gray-400 hover:text-white cursor-pointer transition">
+            <i class="fas fa-paperclip text-lg"></i>
+            <input type="file" id="file-input" class="hidden" onchange="handleFileSelect(event)">
+          </label>
+          <input type="text" id="message-input" placeholder="Type a message..." class="flex-1 p-2.5 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500 text-sm" onkeypress="if(event.key === 'Enter') sendMessage()">
+          <button onclick="sendMessage()" class="p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition px-4 font-semibold text-sm">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </footer>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- 3. Incoming Call Ringing Modal -->
+  <div id="incoming-call-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden">
+    <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700 w-80 text-center shadow-2xl animate-bounce">
+      <div class="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+        <i class="fas fa-phone-alt animate-pulse"></i>
+      </div>
+      <h3 class="text-lg font-bold mb-1">Incoming Call...</h3>
+      <p id="caller-id-display" class="text-xs text-gray-400 font-mono mb-6 truncate"></p>
+      <div class="flex justify-center gap-4">
+        <button onclick="acceptCall()" class="px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-full flex items-center gap-2 transition">
+          <i class="fas fa-phone"></i> Accept
+        </button>
+        <button onclick="rejectCall()" class="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-full flex items-center gap-2 transition">
+          <i class="fas fa-phone-slash"></i> Decline
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Video/Audio Call Overlay -->
+  <div id="video-call-modal" class="fixed inset-0 bg-black z-50 flex flex-col hidden">
+    <div class="relative flex-1 bg-gray-950 flex items-center justify-center overflow-hidden">
+      <!-- Remote Video (Big Screen) -->
+      <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
+      <!-- Local Video (Small Screen Overlay) -->
+      <video id="local-video" autoplay playsinline muted class="absolute top-4 right-4 w-36 h-48 bg-gray-800 rounded-xl object-cover border-2 border-indigo-500 shadow-2xl"></video>
+    </div>
+    <!-- Call Controls -->
+    <div class="p-4 bg-gray-900 flex justify-center items-center gap-6 border-t border-gray-800">
+      <button onclick="endCall()" class="p-4 bg-red-600 hover:bg-red-500 text-white rounded-full transition shadow-lg">
+        <i class="fas fa-phone-slash text-xl"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- JavaScript Engine -->
+  <script>
+    // Firebase Configuration - Apni Config Keys Replace Karein
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    let peer = null;
+    let activeChatEmail = null;
+    let savedContacts = [];
+    let unsubscribeMessages = null;
+    let currentCall = null;
+    let incomingCall = null;
+    let localStream = null;
+    let audioCtx = null;
+    let ringtoneTimer = null;
+
+    // Helper: Email to Valid Peer ID Converter
+    function emailToPeerId(email) {
+      return 'peer_' + email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    }
+    function peerIdToEmail(peerId) {
+      return peerId.replace('peer_', '');
+    }
+
+    // 1. Auth Listener & App Initialization
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('user-display-email').innerText = user.email;
+
+        // PeerJS Client Registration for WebRTC Video Calls
+        const myPeerId = emailToPeerId(user.email);
+        peer = new Peer(myPeerId);
+
+        // incoming call listener
+        peer.on('call', call => {
+          incomingCall = call;
+          startRingtone();
+          document.getElementById('caller-id-display').innerText = peerIdToEmail(call.peer);
+          document.getElementById('incoming-call-modal').classList.remove('hidden');
+        });
+
+        // Sync Saved Contacts from Firestore Permanently
+        loadSavedContacts(user.email);
+      } else {
+        document.getElementById('auth-screen').classList.remove('hidden');
+        document.getElementById('app').classList.add('hidden');
+      }
+    });
+
+    function handleSignUp() {
+      const email = document.getElementById('auth-email').value.trim();
+      const pass = document.getElementById('auth-password').value.trim();
+      auth.createUserWithEmailAndPassword(email, pass).catch(err => alert(err.message));
+    }
+
+    function handleLogin() {
+      const email = document.getElementById('auth-email').value.trim();
+      const pass = document.getElementById('auth-password').value.trim();
+      auth.signInWithEmailAndPassword(email, pass).catch(err => alert(err.message));
+    }
+
+    function handleLogout() {
+      auth.signOut();
+    }
+
+    // 2. Permanent Contacts Sync via Firestore
+    function loadSavedContacts(userEmail) {
+      db.collection('users').doc(userEmail).onSnapshot(doc => {
+        if (doc.exists && doc.data().contacts) {
+          savedContacts = doc.data().contacts;
+        } else {
+          savedContacts = [];
+        }
+        renderContactsList();
+      });
+    }
+
+    function saveContactToCloud(newEmail) {
+      const myEmail = auth.currentUser.email;
+      // Save to My Account Contacts
+      db.collection('users').doc(myEmail).set({
+        contacts: firebase.firestore.FieldValue.arrayUnion(newEmail)
+      }, { merge: true });
+
+      // Auto Add Me to Recipient Account Contacts
+      db.collection('users').doc(newEmail).set({
+        contacts: firebase.firestore.FieldValue.arrayUnion(myEmail)
+      }, { merge: true });
+    }
+
+    function addNewContact() {
+      const email = prompt("Enter Friend's Gmail ID:");
+      if (!email) return;
+      const cleanEmail = email.trim().toLowerCase();
+      if (cleanEmail === auth.currentUser.email.toLowerCase()) {
+        alert("Aap khud ki ID add nahi kar sakte!");
+        return;
+      }
+      saveContactToCloud(cleanEmail);
+      selectChat(cleanEmail);
+    }
+
+    function renderContactsList() {
+      const listEl = document.getElementById('contacts-list');
+      listEl.innerHTML = '';
+
+      savedContacts.forEach(email => {
+        const item = document.createElement('div');
+        const isActive = activeChatEmail === email;
+        item.className = `p-3 cursor-pointer hover:bg-gray-700/50 flex items-center justify-between transition ${isActive ? 'bg-gray-700 border-l-4 border-indigo-500' : ''}`;
+        item.onclick = () => selectChat(email);
+        item.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-indigo-600/30 text-indigo-400 flex items-center justify-center font-bold text-xs">
+              <i class="fas fa-user"></i>
+            </div>
+            <p class="font-semibold text-sm truncate font-mono">${email}</p>
+          </div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    // 3. WhatsApp Style Offline & Realtime Sync Engine
+    function getChatRoomId(email1, email2) {
+      return [email1.trim().toLowerCase(), email2.trim().toLowerCase()].sort().join('_');
+    }
+
+    function selectChat(email) {
+      activeChatEmail = email;
+      document.getElementById('no-active-chat').classList.add('hidden');
+      document.getElementById('active-chat-container').classList.remove('hidden');
+      document.getElementById('active-contact-email').innerText = email;
+      
+      renderContactsList();
+
+      if (unsubscribeMessages) unsubscribeMessages();
+
+      const myEmail = auth.currentUser.email;
+      const roomId = getChatRoomId(myEmail, email);
+
+      // Listen to Realtime Chat Updates (Offline sent msgs auto show here)
+      unsubscribeMessages = db.collection('chats').doc(roomId).collection('messages')
+        .orderBy('timestamp', 'asc')
+        .onSnapshot(snapshot => {
+          const messagesContainer = document.getElementById('messages-container');
+          messagesContainer.innerHTML = '';
+
+          snapshot.forEach(doc => {
+            const msg = doc.data();
+            const isMe = msg.sender === myEmail;
+            const div = document.createElement('div');
+            div.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
+
+            let content = '';
+            if (typeof msg.payload === 'object' && msg.payload.data) {
+              if (msg.payload.fileType && msg.payload.fileType.startsWith('image/')) {
+                content = `<img src="${msg.payload.data}" class="max-w-xs rounded-lg mb-1 border border-gray-600">`;
+              } else {
+                content = `<a href="${msg.payload.data}" download="${msg.payload.name}" class="underline text-indigo-300 text-xs flex items-center gap-1"><i class="fas fa-file-download"></i> ${msg.payload.name}</a>`;
+              }
+            } else {
+              content = `<p class="text-sm">${msg.payload}</p>`;
+            }
+
+            const timeStr = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+
+            div.innerHTML = `
+              <div class="max-w-[70%] p-3 rounded-xl ${isMe ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-800 border border-gray-700 text-white rounded-bl-none'} shadow-md">
+                ${content}
+                <span class="text-[10px] text-gray-300 block text-right mt-1 opacity-70">${timeStr}</span>
+              </div>
+            `;
+            messagesContainer.appendChild(div);
+          });
+
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+    }
+
+    function sendMessage() {
+      if (!activeChatEmail) return;
+      const input = document.getElementById('message-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const myEmail = auth.currentUser.email;
+      const roomId = getChatRoomId(myEmail, activeChatEmail);
+
+      // Auto-save Contact to Cloud
+      saveContactToCloud(activeChatEmail);
+
+      db.collection('chats').doc(roomId).collection('messages').add({
+        sender: myEmail,
+        receiver: activeChatEmail,
+        payload: text,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      input.value = '';
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file || !activeChatEmail) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const payload = {
+          name: file.name,
+          fileType: file.type,
+          data: evt.target.result
+        };
+        const myEmail = auth.currentUser.email;
+        const roomId = getChatRoomId(myEmail, activeChatEmail);
+
+        saveContactToCloud(activeChatEmail);
+
+        db.collection('chats').doc(roomId).collection('messages').add({
+          sender: myEmail,
+          receiver: activeChatEmail,
+          payload: payload,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        document.getElementById('file-input').value = '';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 4. Ringtone Sound Engine (Built-in Audio Synthesizer)
+    function startRingtone() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      ringtoneTimer = setInterval(() => {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 440;
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.8);
+      }, 1600);
+    }
+
+    function stopRingtone() {
+      if (ringtoneTimer) clearInterval(ringtoneTimer);
+    }
+
+    // 5. Video & Voice Call Logic (PeerJS MediaStream)
+    function initiateCall(type) {
+      if (!activeChatEmail) return alert("Pehle koi chat select karein!");
+      
+      navigator.mediaDevices.getUserMedia({ video: type === 'video', audio: true })
+        .then(stream => {
+          localStream = stream;
+          document.getElementById('local-video').srcObject = stream;
+          document.getElementById('video-call-modal').classList.remove('hidden');
+
+          const targetPeerId = emailToPeerId(activeChatEmail);
+          const call = peer.call(targetPeerId, stream, { metadata: { type: type } });
+          currentCall = call;
+
+          call.on('stream', remoteStream => {
+            document.getElementById('remote-video').srcObject = remoteStream;
+          });
+          call.on('close', endCall);
+        })
+        .catch(err => alert("Camera/Microphone Permission Denied: " + err.message));
+    }
+
+    function acceptCall() {
+      stopRingtone();
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+      
+      const isVideo = incomingCall.metadata && incomingCall.metadata.type === 'video';
+
+      navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true })
+        .then(stream => {
+          localStream = stream;
+          document.getElementById('local-video').srcObject = stream;
+          document.getElementById('video-call-modal').classList.remove('hidden');
+
+          incomingCall.answer(stream);
+          currentCall = incomingCall;
+
+          incomingCall.on('stream', remoteStream => {
+            document.getElementById('remote-video').srcObject = remoteStream;
+          });
+          incomingCall.on('close', endCall);
+        })
+        .catch(err => alert("Camera/Microphone Permission Required: " + err.message));
+    }
+
+    function rejectCall() {
+      stopRingtone();
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+      if (incomingCall) incomingCall.close();
+    }
+
+    function endCall() {
+      stopRingtone();
+      if (currentCall) currentCall.close();
+      if (localStream) localStream.getTracks().forEach(track => track.stop());
+      document.getElementById('video-call-modal').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
